@@ -3,12 +3,14 @@
 interface LedgerTransport {
     close(): Promise<void>;
     setExchangeTimeout(timeout: number): void;
+    on?(event: string, callback: () => void): void;
 }
 const TransportWebUSB: {open(device: any): Promise<LedgerTransport>} = require('@ledgerhq/hw-transport-webusb').default;
 import { Waves } from '@waves/ledger/lib/Waves';
 import { Buffer } from 'buffer';
 import { libs } from '@waves/waves-transactions';
 import { LedgerAccount, signLedgerTransaction } from './ledger.transaction';
+import { LedgerPreferencesStore, LedgerStorage, emptyLedgerPreferences, ledgerSenderKeys, preferredLedgerAccount } from './ledger.preferences';
 
 export function ledgerUnavailableReason(): string | undefined {
     if (!window.isSecureContext) return 'Ledger needs HTTPS. Open this IDE at its HTTPS address.';
@@ -33,6 +35,31 @@ export class LedgerConnection {
     private account?: LedgerAccount;
     private chainId?: number;
     private busy = false;
+    private preferences = emptyLedgerPreferences();
+    private profile?: string;
+    private preferencesStore: LedgerPreferencesStore;
+
+    constructor(storage?: LedgerStorage) { this.preferencesStore = new LedgerPreferencesStore(storage); }
+
+    getAccounts(chainId: number): LedgerAccount[] {
+        return this.waves && this.chainId === chainId ? this.preferences.accounts.slice() : [];
+    }
+    getAccount(chainId: number): LedgerAccount | undefined {
+        return this.waves && this.chainId === chainId ? this.account : undefined;
+    }
+    preferredAccount(value: string, chainId: number): LedgerAccount | undefined {
+        if (!this.waves || this.chainId !== chainId) return undefined;
+        return preferredLedgerAccount(this.preferences, ledgerSenderKeys(value));
+    }
+    rememberSender(value: string): void {
+        if (!this.account) return;
+        ledgerSenderKeys(value).forEach(sender => this.preferences.senders[sender] = this.account!.publicKey);
+        this.savePreferences();
+    }
+    private savePreferences(): void {
+        if (this.profile) this.preferencesStore.save(this.profile, this.preferences);
+    }
+
 
     async connect(chainId: number, cancelled: () => boolean = () => false): Promise<LedgerAccount[]> {
         const unavailable = ledgerUnavailableReason();
@@ -46,6 +73,10 @@ export class LedgerConnection {
             if (cancelled()) throw new Error('Ledger connection cancelled.');
             this.transport = await TransportWebUSB.open(device);
             this.transport.setExchangeTimeout(120000);
+            const transport = this.transport;
+            if (transport.on) transport.on('disconnect', () => {
+                if (this.transport === transport) void this.disconnect();
+            });
             this.waves = new Waves(this.transport, chainId);
             this.chainId = chainId;
         } catch (error) {
@@ -55,7 +86,14 @@ export class LedgerConnection {
             this.busy = false;
         }
         try {
-            return await this.discoverAccounts(0, chainId, cancelled);
+            const initial = await this.discoverAccounts(0, chainId, cancelled);
+            this.profile = `${chainId}:${initial[0].publicKey}`;
+            this.preferences = this.preferencesStore.load(this.profile, chainId);
+            // The device identity was read again. Restore its previously browsed
+            // public addresses; selection still re-reads the chosen derivation path.
+            this.preferences.accounts = [...initial, ...this.preferences.accounts.slice(ADDRESS_PAGE_SIZE)];
+            this.savePreferences();
+            return this.getAccounts(chainId);
         } catch (error) {
             await this.disconnect();
             throw error;
@@ -73,21 +111,35 @@ export class LedgerConnection {
                 accounts.push(await this.readAccount(index, chainId, false));
             }
             if (cancelled()) throw new Error('Ledger address loading cancelled.');
+            if (this.profile && start === this.preferences.accounts.length) {
+                this.preferences.accounts = [...this.preferences.accounts, ...accounts];
+                this.savePreferences();
+            }
             return accounts;
         } finally {
             this.busy = false;
         }
     }
 
-    async selectAccount(index: number, chainId: number): Promise<LedgerAccount> {
+    async selectAccount(index: number, chainId: number, forceVerify = false): Promise<LedgerAccount> {
         this.checkConnection(chainId);
         if (!Number.isInteger(index) || index < 0 || index > 0x7fffffff) throw new Error('Invalid Ledger account.');
         this.busy = true;
         this.account = undefined;
         try {
-            // Confirm the chosen address on the physical device before enabling signing.
-            const account = await this.readAccount(index, chainId, true);
+            const account = await this.readAccount(index, chainId, false);
+            const expected = this.preferences.accounts.find(item => item.index === index);
+            if (expected && account.publicKey !== expected.publicKey) {
+                throw new Error('Ledger account changed. Reconnect to load addresses from this device.');
+            }
+            if (forceVerify || this.preferences.verified[index] !== account.publicKey) {
+                const confirmed = await this.readAccount(index, chainId, true);
+                if (confirmed.publicKey !== account.publicKey) throw new Error('Ledger account changed during address confirmation.');
+                this.preferences.verified[index] = account.publicKey;
+            }
             this.account = account;
+            this.preferences.selected = account.publicKey;
+            this.savePreferences();
             return account;
         } finally {
             this.busy = false;
@@ -114,6 +166,8 @@ export class LedgerConnection {
         this.waves = undefined;
         this.chainId = undefined;
         this.account = undefined;
+        this.profile = undefined;
+        this.preferences = emptyLedgerPreferences();
         if (transport) await transport.close().catch(() => undefined);
     }
 
@@ -146,3 +200,7 @@ export class LedgerConnection {
 
     private path(index: number): string { return `44'/5741564'/0'/0'/${index}'`; }
 }
+
+// Keep the USB session and discovered addresses when the signing dialog closes.
+// A page reload or physical disconnect still requires connecting the device again.
+export const ledgerConnection = new LedgerConnection();

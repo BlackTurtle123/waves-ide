@@ -58,7 +58,8 @@ test('loads address pages sequentially without confirmation and confirms only th
     assert.equal(calls[7].path, "44'/5741564'/0'/0'/7'");
     await assert.rejects(connection.sign({}, '', 84, 0, () => false), /Connect Ledger first/);
     assert.deepEqual(await connection.selectAccount(12, 84), next[2]);
-    assert.deepEqual(calls[20], {path: calls[12].path, verify: true});
+    assert.deepEqual(calls[20], {path: calls[12].path, verify: false});
+    assert.deepEqual(calls[21], {path: calls[12].path, verify: true});
     assert.deepEqual(connection.account, next[2]);
 });
 

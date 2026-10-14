@@ -7,8 +7,20 @@ WebUSB browser) over trusted HTTPS, connect the device by USB, and open its Wave
 app. Click **Connect Ledger** to load the first ten addresses. Choose your address
 from the **Ledger address** list and confirm it on the device. Use **Load more
 addresses** to browse ten subsequent accounts at a time. The selected public key appears in the
-IDE; signing is enabled only after device confirmation. Reconnect after changing
-networks. Error `0x5515` means the device is PIN-locked: unlock it on the Ledger,
+IDE. New addresses require one device confirmation. Verified addresses, loaded
+pages, and your signer choice for each transaction sender are remembered in this
+browser, separately for each device wallet and network. The chosen public key is
+read again before reusing a confirmation. **Verify address** explicitly displays
+it on the device again. No seeds or private keys are stored by this feature.
+
+The USB connection survives closing and reopening the signing dialog. After a
+page reload, connect once to restore the saved addresses and selected signer.
+**Disconnect** releases the device; **Switch Ledger** selects another device.
+Automatic selection uses your remembered signer for that sender, then an exact
+Ledger public-key match to the sender, then your last-used Ledger account. A
+batch with conflicting signer choices requires manual selection. This is a
+convenience preference, not automatic validation of a contract's multisig policy.
+Reconnect after changing networks. Error `0x5515` means the device is PIN-locked: unlock it on the Ledger,
 open Waves, and reconnect.
 
 Prepare the transaction with its sender public key, network, timestamp, fee and

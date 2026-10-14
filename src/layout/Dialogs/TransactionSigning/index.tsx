@@ -21,7 +21,7 @@ import { signViaExchange } from '@utils/exchange.signer';
 import { SuccessMessage } from '@src/layout/Dialogs/TransactionSigning/SuccessMessage';
 import { SendingMultipleTransactions } from '@src/layout/Dialogs/SendingMultipleTransactions';
 import { stringifyWithTabs } from '@src/layout/Dialogs/TransactionSigning/stringifyWithTabs';
-import { LedgerConnection, ledgerError, ledgerUnavailableReason } from '@utils/ledger';
+import { ledgerConnection, ledgerError, ledgerUnavailableReason } from '@utils/ledger';
 import { LedgerAccount, signLedgerBatch } from '@utils/ledger.transaction';
 
 interface IInjectedProps {
@@ -54,7 +54,7 @@ interface ITransactionEditorState {
 class TransactionSigning extends React.Component<ITransactionEditorProps, ITransactionEditorState> {
     private editor?: monaco.editor.ICodeEditor;
     private model?: monaco.editor.IModel;
-    private ledger = new LedgerConnection();
+    private ledger = ledgerConnection;
     private ledgerEpoch = 0;
     private ledgerPending = false;
     private unmounted = false;
@@ -67,8 +67,9 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         editorValue: this.props.signerStore!.txJson,
         proofIndex: 0,
         seed: '',
-        signType: 'account',
-        ledgerAccounts: [],
+        signType: this.ledger.getAccounts(this.props.settingsStore!.defaultNode.chainId.charCodeAt(0)).length ? 'ledger' : 'account',
+        ledgerAccounts: this.ledger.getAccounts(this.props.settingsStore!.defaultNode.chainId.charCodeAt(0)),
+        ledgerAccount: this.ledger.getAccount(this.props.settingsStore!.defaultNode.chainId.charCodeAt(0)),
         ledgerStatus: '',
         isAwaitingConfirmation: false,
         isMultipleSendDialogOpen: false,
@@ -90,7 +91,17 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                 await this.ledger.disconnect();
                 return;
             }
-            this.setState({ledgerAccounts: accounts});
+            const preferred = this.ledger.preferredAccount(this.state.editorValue, chainId);
+            let account: LedgerAccount | undefined;
+            if (preferred) {
+                this.setState({ledgerStatus: 'Restoring your Ledger signing address…'});
+                account = await this.ledger.selectAccount(preferred.index, chainId);
+            }
+            if (epoch !== this.ledgerEpoch || this.unmounted) {
+                await this.ledger.disconnect();
+                return;
+            }
+            this.setState({ledgerAccounts: accounts, ledgerAccount: account});
         } catch (error) {
             if (!this.unmounted && epoch === this.ledgerEpoch) this.showMessage(ledgerError(error), {type: 'error'});
         } finally {
@@ -99,7 +110,7 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         }
     };
 
-    handleLedgerAddresses = async (address?: string) => {
+    handleLedgerAddresses = async (address?: string, forceVerify = false, remember = true) => {
         if (this.ledgerPending) return;
         const chosen = address ? this.state.ledgerAccounts.find(account => account.address === address) : undefined;
         if (address && !chosen) return;
@@ -108,13 +119,16 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         const cancelled = () => epoch !== this.ledgerEpoch || this.unmounted;
         this.setState({isAwaitingConfirmation: true,
             ledgerAccount: chosen ? undefined : this.state.ledgerAccount,
-            ledgerStatus: chosen ? 'Confirm the selected address on Ledger.' : 'Loading more Ledger addresses…'});
+            ledgerStatus: chosen ? 'Selecting Ledger address. Confirm on the device if this address is new.' : 'Loading more Ledger addresses…'});
         try {
             const chainId = this.props.settingsStore!.defaultNode.chainId.charCodeAt(0);
             if (chosen) {
-                const account = await this.ledger.selectAccount(chosen.index, chainId);
+                const account = await this.ledger.selectAccount(chosen.index, chainId, forceVerify);
                 if (account.address !== chosen.address) throw new Error('Ledger address changed. Reconnect and select your address again.');
-                if (!cancelled()) this.setState({ledgerAccount: account});
+                if (!cancelled()) {
+                    if (remember) this.ledger.rememberSender(this.state.editorValue);
+                    this.setState({ledgerAccount: account});
+                }
             } else {
                 const accounts = await this.ledger.discoverAccounts(this.state.ledgerAccounts.length, chainId, cancelled);
                 if (!cancelled()) this.setState({ledgerAccounts: [...this.state.ledgerAccounts, ...accounts]});
@@ -127,8 +141,26 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                 await this.ledger.disconnect();
                 if (!this.unmounted) this.setState({ledgerAccount: undefined, ledgerAccounts: []});
             }
-            if (!this.unmounted) this.setState({isAwaitingConfirmation: false});
+            if (!this.unmounted) this.setState({isAwaitingConfirmation: false}, chosen ? undefined : this.syncLedgerSelection);
         }
+    };
+
+    syncLedgerSelection = () => {
+        if (this.unmounted || this.ledgerPending || this.state.signType !== 'ledger') return;
+        const chainId = this.props.settingsStore!.defaultNode.chainId.charCodeAt(0);
+        const accounts = this.ledger.getAccounts(chainId);
+        const preferred = this.ledger.preferredAccount(this.state.editorValue, chainId);
+        if (!preferred) {
+            this.setState({ledgerAccounts: accounts, ledgerAccount: undefined});
+        } else if (!this.state.ledgerAccount || this.state.ledgerAccount.publicKey !== preferred.publicKey) {
+            this.setState({ledgerAccounts: accounts}, () => void this.handleLedgerAddresses(preferred.address, false, false));
+        }
+    };
+
+    handleLedgerDisconnect = async () => {
+        if (this.ledgerPending) return;
+        await this.ledger.disconnect();
+        this.setState({ledgerAccounts: [], ledgerAccount: undefined});
     };
 
     handleLedgerSign = async (): Promise<boolean> => {
@@ -146,6 +178,7 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
             const signed = await signLedgerBatch(transactions,
                 tx => this.ledger.sign(tx, node.url, node.chainId.charCodeAt(0), proofIndex, cancelled), cancelled);
             if (cancelled()) return false;
+            this.ledger.rememberSender(editorValue);
             const value = stringifyWithTabs(Array.isArray(input) ? signed : signed[0]);
             this.editor.getModel()!.setValue(value);
             this.setState({editorValue: value, signedTxs: signed, proofIndex: Math.min(proofIndex + 1, 7)});
@@ -327,7 +360,7 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
     }, 1000);
 
     handleEditorChange = (editorValue: string, e?: monaco.editor.IModelContentChangedEvent) => {
-        this.setState({editorValue});
+        this.setState({editorValue}, this.syncLedgerSelection);
         this.updateStoreValue(editorValue);
     };
 
@@ -403,10 +436,13 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
             : m.editor.setTheme(DEFAULT_THEME_ID);
     };
 
+    componentDidMount() {
+        this.syncLedgerSelection();
+    }
+
     componentWillUnmount() {
         this.unmounted = true;
         ++this.ledgerEpoch;
-        if (!this.ledgerPending) void this.ledger.disconnect();
         this.model && this.model.dispose();
     }
 
@@ -519,9 +555,11 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                             onLedgerConnect={this.handleLedgerConnect}
                             onLedgerAddressChange={address => void this.handleLedgerAddresses(address)}
                             onLedgerLoadMore={() => void this.handleLedgerAddresses()}
+                            onLedgerVerify={() => this.state.ledgerAccount && void this.handleLedgerAddresses(this.state.ledgerAccount.address, true, false)}
+                            onLedgerDisconnect={this.handleLedgerDisconnect}
                             signDisabled={signDisabled}
                             signType={signType}
-                            onSignTypeChange={v => this.setState({signType: v as any})}
+                            onSignTypeChange={v => this.setState({signType: v as any}, this.syncLedgerSelection)}
                             accounts={accounts}
                             selectedAccount={selectedAccount}
                             seed={seed}

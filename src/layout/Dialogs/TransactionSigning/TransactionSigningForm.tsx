@@ -15,6 +15,8 @@ interface ITransactionSigningFormProps {
     ledgerStatus: string;
     onLedgerAddressChange: (value: string) => void;
     onLedgerLoadMore: () => void;
+    onLedgerVerify: () => void;
+    onLedgerDisconnect: () => void;
     onLedgerConnect: () => void;
     onSignTypeChange: (v: string) => void;
     seed: string;
@@ -147,11 +149,13 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                         </button>}
                     </div>
                     {signType === 'ledger' && <div style={{width: '100%', marginTop: 16}}>
-                        <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+                        <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16}}>
                             <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
-                                {this.props.ledgerAccounts.length ? 'Reconnect Ledger' : 'Connect Ledger'}
+                                {this.props.ledgerAccounts.length ? 'Switch Ledger' : 'Connect Ledger'}
                             </Button>
                             {this.props.ledgerAccounts.length > 0 && <Button onClick={this.props.onLedgerLoadMore}>Load more addresses</Button>}
+                            {this.props.ledgerAccount && <Button onClick={this.props.onLedgerVerify}>Verify address</Button>}
+                            {this.props.ledgerAccounts.length > 0 && <Button onClick={this.props.onLedgerDisconnect}>Disconnect</Button>}
                         </div>
                         <div style={{marginTop: 12, overflowWrap: 'break-word', userSelect: 'text', WebkitUserSelect: 'text'}}>
                             {this.props.ledgerAccounts.length > 0 && <label>
@@ -167,9 +171,9 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             </label>}
                             {ledgerUnavailableReason() || (this.props.ledgerAccount
                                 ? <>Public key: {this.props.ledgerAccount.publicKey}<br/>
-                                    Existing transaction sender and proofs are preserved.</>
+                                    Ledger addresses and signer choices are remembered in this browser. Transaction sender and proofs are preserved.</>
                                 : this.props.ledgerAccounts.length
-                                    ? 'Choose your address, then confirm it on Ledger.'
+                                    ? 'Choose your address. New addresses need confirmation once; verified addresses are remembered in this browser.'
                                     : 'Connect by USB, unlock Ledger with your PIN, and open the Waves app to load addresses.')}
                         </div>
                     </div>}
