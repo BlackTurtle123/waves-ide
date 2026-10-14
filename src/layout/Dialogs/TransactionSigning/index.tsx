@@ -21,6 +21,8 @@ import { signViaExchange } from '@utils/exchange.signer';
 import { SuccessMessage } from '@src/layout/Dialogs/TransactionSigning/SuccessMessage';
 import { SendingMultipleTransactions } from '@src/layout/Dialogs/SendingMultipleTransactions';
 import { stringifyWithTabs } from '@src/layout/Dialogs/TransactionSigning/stringifyWithTabs';
+import { LedgerConnection, ledgerError, ledgerUnavailableReason } from '@utils/ledger';
+import { LedgerAccount, signLedgerBatch } from '@utils/ledger.transaction';
 
 interface IInjectedProps {
     signerStore?: SignerStore;
@@ -38,7 +40,10 @@ interface ITransactionEditorState {
     proofIndex: number;
     seed: string;
     selectedAccount: number;
-    signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange';
+    signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange' | 'ledger';
+    ledgerIndex: string;
+    ledgerAccount?: LedgerAccount;
+    ledgerStatus: string;
     isAwaitingConfirmation: boolean;
     isMultipleSendDialogOpen: boolean;
     signedTxs: any[];
@@ -49,6 +54,10 @@ interface ITransactionEditorState {
 class TransactionSigning extends React.Component<ITransactionEditorProps, ITransactionEditorState> {
     private editor?: monaco.editor.ICodeEditor;
     private model?: monaco.editor.IModel;
+    private ledger = new LedgerConnection();
+    private ledgerEpoch = 0;
+    private ledgerPending = false;
+    private unmounted = false;
 
     private showMessage = (data: JSX.Element | string, opts = {}) =>
         this.props.notificationsStore!.notify(data, {closable: true, duration: 10, ...opts});
@@ -59,6 +68,8 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         proofIndex: 0,
         seed: '',
         signType: 'account',
+        ledgerIndex: '0',
+        ledgerStatus: '',
         isAwaitingConfirmation: false,
         isMultipleSendDialogOpen: false,
         signedTxs: []
@@ -66,7 +77,70 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
 
     availableProofs = range(0, 8);
 
+    handleLedgerConnect = async () => {
+        if (this.ledgerPending) return;
+        this.ledgerPending = true;
+        const epoch = ++this.ledgerEpoch;
+        this.setState({isAwaitingConfirmation: true, ledgerAccount: undefined,
+            ledgerStatus: 'Select Ledger, open Waves, and confirm the address on the device.'});
+        try {
+            if (!/^\d+$/.test(this.state.ledgerIndex)) throw new Error('Enter a Ledger account index (0 or greater).');
+            const chainId = this.props.settingsStore!.defaultNode.chainId.charCodeAt(0);
+            const account = await this.ledger.connect(Number(this.state.ledgerIndex), chainId);
+            if (epoch !== this.ledgerEpoch || this.unmounted) {
+                await this.ledger.disconnect();
+                return;
+            }
+            this.setState({ledgerAccount: account});
+        } catch (error) {
+            if (!this.unmounted && epoch === this.ledgerEpoch) this.showMessage(ledgerError(error), {type: 'error'});
+        } finally {
+            this.ledgerPending = false;
+            if (!this.unmounted) this.setState({isAwaitingConfirmation: false});
+        }
+    };
+
+    handleLedgerSign = async (): Promise<boolean> => {
+        if (!this.editor || this.ledgerPending) return false;
+        this.ledgerPending = true;
+        const epoch = ++this.ledgerEpoch;
+        const {editorValue, proofIndex} = this.state;
+        const node = this.props.settingsStore!.defaultNode;
+        const cancelled = () => epoch !== this.ledgerEpoch || this.unmounted;
+        this.setState({isAwaitingConfirmation: true, ledgerStatus: 'Review and approve the transaction on Ledger.'});
+        this.editor.updateOptions({readOnly: true});
+        try {
+            const input = libs.marshall.json.parseTx(editorValue);
+            const transactions = Array.isArray(input) ? input : [input];
+            const signed = await signLedgerBatch(transactions,
+                tx => this.ledger.sign(tx, node.url, node.chainId.charCodeAt(0), proofIndex, cancelled), cancelled);
+            if (cancelled()) return false;
+            const value = stringifyWithTabs(Array.isArray(input) ? signed : signed[0]);
+            this.editor.getModel()!.setValue(value);
+            this.setState({editorValue: value, signedTxs: signed, proofIndex: Math.min(proofIndex + 1, 7)});
+            return true;
+        } catch (error) {
+            if (!cancelled()) this.showMessage(ledgerError(error), {type: 'error'});
+            return false;
+        } finally {
+            this.ledgerPending = false;
+            if (this.unmounted) await this.ledger.disconnect();
+            else {
+                this.setState({isAwaitingConfirmation: false});
+                this.editor.updateOptions({readOnly: false});
+            }
+        }
+    };
+
+    cancelConfirmation = () => {
+        if (this.ledgerPending) {
+            ++this.ledgerEpoch;
+            this.setState({ledgerStatus: 'Cancelled. Dismiss the browser prompt or reject on Ledger to finish.'});
+        } else this.setState({isAwaitingConfirmation: false});
+    };
+
     handleSign = async () => {
+        if (this.state.signType === 'ledger') return this.handleLedgerSign();
         if (!this.editor) return false;
         const accounts = this.props.accountsStore!.accounts;
         const {proofIndex, selectedAccount, signType, seed, editorValue} = this.state;
@@ -299,6 +373,9 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
     };
 
     componentWillUnmount() {
+        this.unmounted = true;
+        ++this.ledgerEpoch;
+        if (!this.ledgerPending) void this.ledger.disconnect();
         this.model && this.model.dispose();
     }
 
@@ -342,8 +419,10 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         } = this.state;
         const {settingsStore} = this.props;
         const {error} = this.parseInput(editorValue);
-        const signDisabled = !!error || (selectedAccount === -1 && !seed) || !this.availableProofs.includes(proofIndex)
-            || (accounts.length === 0 && signType === 'account') || (seed === '' && signType === 'seed');
+        const signDisabled = !!error || !this.availableProofs.includes(proofIndex)
+            || (signType === 'account' && (selectedAccount < 0 || accounts.length === 0))
+            || (seed === '' && signType === 'seed')
+            || (signType === 'ledger' && (!this.state.ledgerAccount || !!ledgerUnavailableReason()));
 
 
         let sendDisabled = true;
@@ -367,7 +446,7 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                         <Button className={styles.btn} onClick={this.onClose}>Cancel</Button>
                         <Button
                             className={styles.btn}
-                            disabled={sendDisabled}
+                            disabled={sendDisabled || isAwaitingConfirmation}
                             onClick={this.handleSend(editorValue)}
                             type="action-blue">
                             Publish
@@ -402,7 +481,15 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                     <div className={styles.signing}>
                         <TransactionSigningForm
                             isAwaitingConfirmation={isAwaitingConfirmation}
-                            disableAwaitingConfirmation={() => this.setState({isAwaitingConfirmation: false})}
+                            disableAwaitingConfirmation={this.cancelConfirmation}
+                            ledgerIndex={this.state.ledgerIndex}
+                            ledgerAccount={this.state.ledgerAccount}
+                            ledgerStatus={this.state.ledgerStatus}
+                            onLedgerConnect={this.handleLedgerConnect}
+                            onLedgerIndexChange={ledgerIndex => {
+                                void this.ledger.disconnect();
+                                this.setState({ledgerIndex, ledgerAccount: undefined});
+                            }}
                             signDisabled={signDisabled}
                             signType={signType}
                             onSignTypeChange={v => this.setState({signType: v as any})}

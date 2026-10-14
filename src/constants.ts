@@ -12,7 +12,7 @@ export const NETWORKS = {
         explorer: 'https://testnet.wavesexplorer.com'
     },
     MAINNET: {
-        url: 'https://nodes.wavesplatform.com',
+        url: 'https://cluster.node.turtlenetwork.eu',
         chainId: 'W',
         explorer: 'https://wavesexplorer.com'
     }

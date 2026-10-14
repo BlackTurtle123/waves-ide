@@ -1,4 +1,31 @@
 # Waves IDE
+
+## Direct Ledger signing
+
+In **Sign and publish**, choose **Ledger (USB)**. Use desktop Chrome (or another
+WebUSB browser) over trusted HTTPS, connect the device by USB, and open its Waves
+app. Enter the account index (starting at 0), click **Connect Ledger**, and verify
+the address on the device. The selected address and public key appear in the IDE.
+
+Prepare the transaction with its sender public key, network, timestamp, fee and
+version. Choose the proof slot and click **Add sign**. Review the transaction on
+Ledger; **Publish** remains a separate action. A Ledger signer may differ from the
+transaction sender for multisignature accounts. Existing sender data and other
+proof slots are preserved, and each signature is verified against the exact
+transaction bytes before it is accepted. Transaction arrays are signed one at a
+time; rejecting or cancelling a batch leaves the editor unchanged.
+
+Cancellation also requires dismissing the USB chooser or rejecting the pending
+request on the device. Disconnect Ledger from other wallets if the device is busy.
+Unsupported transaction versions are rejected by the Waves app; install an app
+update if needed. Invoke signing supports at most two payments. Private keys and
+seed phrases stay on Ledger.
+
+Run `npm run test:ledger` for signature integrity, multisignature, amount precision,
+network, rejection, cancellation and batch-order regression tests. A physical
+Ledger check is still required for browser/device/firmware compatibility. With
+Node 18+, build this legacy Webpack 4 project using
+`NODE_OPTIONS=--openssl-legacy-provider` for the asset and bundle build commands.
 ## About
 This repository contains [Waves Web IDE](https://ide.wavesplatform.com) for RIDE smart contracts
 You can set default seed, default network byte and node url via settings.
