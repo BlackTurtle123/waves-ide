@@ -1,6 +1,6 @@
 {
   "name": "waves-ide",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "description": "Waves smart contact IDE",
   "main": "index.js",
   "repository": "http://github.com/wavesplatform/waves-ide",
@@ -13,7 +13,8 @@
     "build-language-server": "node scripts/build-language-server.js prod",
     "build-schemas": "ts-node scripts/build-schemas.ts",
     "run-all-scripts": "npm run update-examples && npm run update-test-typings && npm run build-monaco && npm run build-mocha && npm run build-language-server && npm run build-schemas",
-    "dist": "webpack --config webpack.config.js --env"
+    "dist": "webpack --config webpack.config.js --env",
+    "test:ledger": "node --test test/ledger-*.test.js"
   },
   "author": "wavesplatform",
   "license": "ISC",
@@ -31,13 +32,15 @@
     "bb >= 10"
   ],
   "dependencies": {
-    "@waves/ride-js": "2.2.5",
-    "@waves/ride-language-server": "^1.1.4",
+    "@ledgerhq/hw-transport-webusb": "5.53.1",
     "@waves.exchange/provider-web": "1.0.2",
     "@waves/js-test-env": "1.1.4-beta",
+    "@waves/ledger": "4.0.3",
+    "@waves/ride-js": "2.2.9",
+    "@waves/ride-language-server": "^1.1.4",
     "@waves/signer": "1.0.2",
-    "@waves/tx-json-schemas": "1.2.5-beta.3",
     "@waves/ts-types": "1.0.7",
+    "@waves/tx-json-schemas": "1.2.5-beta.3",
     "@waves/waves-browser-bus": "0.2.6",
     "@waves/waves-transactions": "4.2.4",
     "@waves/waveskeeper-types": "0.0.6",

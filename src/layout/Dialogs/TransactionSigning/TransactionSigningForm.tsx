@@ -5,9 +5,19 @@ import Button from '@src/components/Button';
 import styles from './styles.less';
 import classNames from 'classnames';
 import Input from '@components/Input';
+import { LedgerAccount } from '@utils/ledger.transaction';
+import { ledgerUnavailableReason } from '@utils/ledger';
 
 interface ITransactionSigningFormProps {
-    signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange';
+    signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange' | 'ledger';
+    ledgerAccounts: LedgerAccount[];
+    ledgerAccount?: LedgerAccount;
+    ledgerStatus: string;
+    onLedgerAddressChange: (value: string) => void;
+    onLedgerLoadMore: () => void;
+    onLedgerVerify: () => void;
+    onLedgerDisconnect: () => void;
+    onLedgerConnect: () => void;
     onSignTypeChange: (v: string) => void;
     seed: string;
     availableProofIndexes: number[];
@@ -47,15 +57,16 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
         const signOptions = [{value: 'seed', title: 'Seed phrase'}, {
             value: 'account',
             title: 'IDE Account'
-        }, {value: 'exchange', title: 'waves.exchange'}];
+        }, {value: 'exchange', title: 'waves.exchange'}, {value: 'ledger', title: 'Ledger (USB)'}];
         if (keeperEnabled) signOptions.push({value: 'wavesKeeper', title: 'Waves Keeper'});
         const {justSigned} = this.state;
         return isAwaitingConfirmation
             ? <WaitForWavesKeeper
                 onCancel={disableAwaitingConfirmation}
+                message={signType === 'ledger' ? this.props.ledgerStatus : undefined}
             />
             : (
-                <div className={styles.signingForm}>
+                <div className={styles.signingForm} style={signType === 'ledger' ? {flexWrap: 'wrap'} : undefined}>
                     <div className={styles.signing_field}>
                         <div className={styles.signing_title}>Sign with</div>
                         <Select
@@ -67,7 +78,7 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             onChange={onSignTypeChange}
                         />
                     </div>
-                    <div className={styles.signing_field}>
+                    <div className={styles.signing_field} style={signType === 'ledger' ? {display: 'none'} : undefined}>
                         {{
                             account: <>
                                 <div className={styles.signing_title}>Account</div>
@@ -93,6 +104,7 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                                 <div className={styles.signing_title}/>
                                 <div className={styles.signing_input}/>
                             </>,
+                            ledger: null,
                             exchange: <>
                                 <div className={styles.signing_title}/>
                                 <div className={styles.signing_input}/>
@@ -136,16 +148,45 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             {justSigned ? 'Sign added' : 'Add sign'}
                         </button>}
                     </div>
+                    {signType === 'ledger' && <div style={{width: '100%', marginTop: 16}}>
+                        <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16}}>
+                            <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
+                                {this.props.ledgerAccounts.length ? 'Switch Ledger' : 'Connect Ledger'}
+                            </Button>
+                            {this.props.ledgerAccounts.length > 0 && <Button onClick={this.props.onLedgerLoadMore}>Load more addresses</Button>}
+                            {this.props.ledgerAccount && <Button onClick={this.props.onLedgerVerify}>Verify address</Button>}
+                            {this.props.ledgerAccounts.length > 0 && <Button onClick={this.props.onLedgerDisconnect}>Disconnect</Button>}
+                        </div>
+                        <div style={{marginTop: 12, overflowWrap: 'break-word', userSelect: 'text', WebkitUserSelect: 'text'}}>
+                            {this.props.ledgerAccounts.length > 0 && <label>
+                                Ledger address
+                                <select aria-label="Ledger address" value={this.props.ledgerAccount ? this.props.ledgerAccount.address : ''}
+                                        onChange={e => this.props.onLedgerAddressChange(e.target.value)}
+                                        style={{display: 'block', width: '100%', padding: 10, marginTop: 6, marginBottom: 8}}>
+                                    <option value="" disabled>Select an address</option>
+                                    {this.props.ledgerAccounts.map(account => <option key={account.address} value={account.address}>
+                                        {account.address}
+                                    </option>)}
+                                </select>
+                            </label>}
+                            {ledgerUnavailableReason() || (this.props.ledgerAccount
+                                ? <>Public key: {this.props.ledgerAccount.publicKey}<br/>
+                                    Ledger addresses and signer choices are remembered in this browser. Transaction sender and proofs are preserved.</>
+                                : this.props.ledgerAccounts.length
+                                    ? 'Choose your address. New addresses need confirmation once; verified addresses are remembered in this browser.'
+                                    : 'Connect by USB, unlock Ledger with your PIN, and open the Waves app to load addresses.')}
+                        </div>
+                    </div>}
                 </div>
             );
     }
 }
 
-const WaitForWavesKeeper = ({onCancel}: { onCancel: () => void }) =>
+const WaitForWavesKeeper = ({onCancel, message}: { onCancel: () => void, message?: string }) =>
     <div className={styles.signing_WaitKeeperRoot}>
         <div className={styles.signing_WaitKeeperText}>
             <div className={styles.signing_title_blue}>Waiting for confirmation</div>
-            <div className={styles.signing_loading}>Loading...</div>
+            <div className={styles.signing_loading}>{message || 'Loading...'}</div>
         </div>
         <Button className={styles.signing_WaitKeeperBtn} onClick={onCancel}>Cancel</Button>
     </div>;
