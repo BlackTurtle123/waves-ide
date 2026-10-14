@@ -63,7 +63,7 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                 message={signType === 'ledger' ? this.props.ledgerStatus : undefined}
             />
             : (
-                <div className={styles.signingForm}>
+                <div className={styles.signingForm} style={signType === 'ledger' ? {flexWrap: 'wrap'} : undefined}>
                     <div className={styles.signing_field}>
                         <div className={styles.signing_title}>Sign with</div>
                         <Select
@@ -106,16 +106,6 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                                 <Input value={this.props.ledgerIndex}
                                        onChange={e => this.props.onLedgerIndexChange(e.target.value)}
                                        className={styles.signing_input}/>
-                                <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
-                                    Connect Ledger
-                                </Button>
-                                <div style={{maxWidth: 340, overflowWrap: 'break-word', marginTop: 8}}>
-                                    {ledgerUnavailableReason() || (this.props.ledgerAccount
-                                        ? <>Address: {this.props.ledgerAccount.address}<br/>
-                                            Public key: {this.props.ledgerAccount.publicKey}<br/>
-                                            Existing transaction sender and proofs are preserved.</>
-                                        : 'Connect by USB, open the Waves app, then confirm the address on your Ledger.')}
-                                </div>
                             </>,
                             exchange: <>
                                 <div className={styles.signing_title}/>
@@ -160,6 +150,18 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             {justSigned ? 'Sign added' : 'Add sign'}
                         </button>}
                     </div>
+                    {signType === 'ledger' && <div style={{width: '100%', marginTop: 24, display: 'flex', alignItems: 'flex-start'}}>
+                        <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
+                            Connect Ledger
+                        </Button>
+                        <div style={{marginLeft: 24, maxWidth: 600, overflowWrap: 'break-word', userSelect: 'text', WebkitUserSelect: 'text'}}>
+                            {ledgerUnavailableReason() || (this.props.ledgerAccount
+                                ? <>Address: {this.props.ledgerAccount.address}<br/>
+                                    Public key: {this.props.ledgerAccount.publicKey}<br/>
+                                    Existing transaction sender and proofs are preserved.</>
+                                : 'Connect by USB, open the Waves app, then confirm the address on your Ledger.')}
+                        </div>
+                    </div>}
                 </div>
             );
     }
