@@ -4,8 +4,12 @@
 
 In **Sign and publish**, choose **Ledger (USB)**. Use desktop Chrome (or another
 WebUSB browser) over trusted HTTPS, connect the device by USB, and open its Waves
-app. Enter the account index (starting at 0), click **Connect Ledger**, and verify
-the address on the device. The selected address and public key appear in the IDE.
+app. Click **Connect Ledger** to load the first ten addresses. Choose your address
+from the **Ledger address** list and confirm it on the device. Use **Load more
+addresses** to browse ten subsequent accounts at a time. The selected public key appears in the
+IDE; signing is enabled only after device confirmation. Reconnect after changing
+networks. Error `0x5515` means the device is PIN-locked: unlock it on the Ledger,
+open Waves, and reconnect.
 
 Prepare the transaction with its sender public key, network, timestamp, fee and
 version. Choose the proof slot and click **Add sign**. Review the transaction on

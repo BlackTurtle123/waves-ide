@@ -10,10 +10,11 @@ import { ledgerUnavailableReason } from '@utils/ledger';
 
 interface ITransactionSigningFormProps {
     signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange' | 'ledger';
-    ledgerIndex: string;
+    ledgerAccounts: LedgerAccount[];
     ledgerAccount?: LedgerAccount;
     ledgerStatus: string;
-    onLedgerIndexChange: (value: string) => void;
+    onLedgerAddressChange: (value: string) => void;
+    onLedgerLoadMore: () => void;
     onLedgerConnect: () => void;
     onSignTypeChange: (v: string) => void;
     seed: string;
@@ -75,7 +76,7 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             onChange={onSignTypeChange}
                         />
                     </div>
-                    <div className={styles.signing_field}>
+                    <div className={styles.signing_field} style={signType === 'ledger' ? {display: 'none'} : undefined}>
                         {{
                             account: <>
                                 <div className={styles.signing_title}>Account</div>
@@ -101,12 +102,7 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                                 <div className={styles.signing_title}/>
                                 <div className={styles.signing_input}/>
                             </>,
-                            ledger: <>
-                                <div className={styles.signing_title}>Ledger account index (starts at 0)</div>
-                                <Input value={this.props.ledgerIndex}
-                                       onChange={e => this.props.onLedgerIndexChange(e.target.value)}
-                                       className={styles.signing_input}/>
-                            </>,
+                            ledger: null,
                             exchange: <>
                                 <div className={styles.signing_title}/>
                                 <div className={styles.signing_input}/>
@@ -150,16 +146,31 @@ export default class TransactionSigningFormComponent extends React.Component<ITr
                             {justSigned ? 'Sign added' : 'Add sign'}
                         </button>}
                     </div>
-                    {signType === 'ledger' && <div style={{width: '100%', marginTop: 24, display: 'flex', alignItems: 'flex-start'}}>
-                        <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
-                            Connect Ledger
-                        </Button>
-                        <div style={{marginLeft: 24, maxWidth: 600, overflowWrap: 'break-word', userSelect: 'text', WebkitUserSelect: 'text'}}>
+                    {signType === 'ledger' && <div style={{width: '100%', marginTop: 16}}>
+                        <div style={{display: 'flex', alignItems: 'center', gap: 16}}>
+                            <Button onClick={this.props.onLedgerConnect} disabled={!!ledgerUnavailableReason()}>
+                                {this.props.ledgerAccounts.length ? 'Reconnect Ledger' : 'Connect Ledger'}
+                            </Button>
+                            {this.props.ledgerAccounts.length > 0 && <Button onClick={this.props.onLedgerLoadMore}>Load more addresses</Button>}
+                        </div>
+                        <div style={{marginTop: 12, overflowWrap: 'break-word', userSelect: 'text', WebkitUserSelect: 'text'}}>
+                            {this.props.ledgerAccounts.length > 0 && <label>
+                                Ledger address
+                                <select aria-label="Ledger address" value={this.props.ledgerAccount ? this.props.ledgerAccount.address : ''}
+                                        onChange={e => this.props.onLedgerAddressChange(e.target.value)}
+                                        style={{display: 'block', width: '100%', padding: 10, marginTop: 6, marginBottom: 8}}>
+                                    <option value="" disabled>Select an address</option>
+                                    {this.props.ledgerAccounts.map(account => <option key={account.address} value={account.address}>
+                                        {account.address}
+                                    </option>)}
+                                </select>
+                            </label>}
                             {ledgerUnavailableReason() || (this.props.ledgerAccount
-                                ? <>Address: {this.props.ledgerAccount.address}<br/>
-                                    Public key: {this.props.ledgerAccount.publicKey}<br/>
+                                ? <>Public key: {this.props.ledgerAccount.publicKey}<br/>
                                     Existing transaction sender and proofs are preserved.</>
-                                : 'Connect by USB, open the Waves app, then confirm the address on your Ledger.')}
+                                : this.props.ledgerAccounts.length
+                                    ? 'Choose your address, then confirm it on Ledger.'
+                                    : 'Connect by USB, unlock Ledger with your PIN, and open the Waves app to load addresses.')}
                         </div>
                     </div>}
                 </div>

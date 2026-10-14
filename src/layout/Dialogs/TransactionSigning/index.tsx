@@ -41,7 +41,7 @@ interface ITransactionEditorState {
     seed: string;
     selectedAccount: number;
     signType: 'account' | 'seed' | 'wavesKeeper' | 'exchange' | 'ledger';
-    ledgerIndex: string;
+    ledgerAccounts: LedgerAccount[];
     ledgerAccount?: LedgerAccount;
     ledgerStatus: string;
     isAwaitingConfirmation: boolean;
@@ -68,7 +68,7 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         proofIndex: 0,
         seed: '',
         signType: 'account',
-        ledgerIndex: '0',
+        ledgerAccounts: [],
         ledgerStatus: '',
         isAwaitingConfirmation: false,
         isMultipleSendDialogOpen: false,
@@ -81,21 +81,52 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
         if (this.ledgerPending) return;
         this.ledgerPending = true;
         const epoch = ++this.ledgerEpoch;
-        this.setState({isAwaitingConfirmation: true, ledgerAccount: undefined,
-            ledgerStatus: 'Select Ledger, open Waves, and confirm the address on the device.'});
+        this.setState({isAwaitingConfirmation: true, ledgerAccount: undefined, ledgerAccounts: [],
+            ledgerStatus: 'Unlock Ledger, open Waves, and select your device to load addresses.'});
         try {
-            if (!/^\d+$/.test(this.state.ledgerIndex)) throw new Error('Enter a Ledger account index (0 or greater).');
             const chainId = this.props.settingsStore!.defaultNode.chainId.charCodeAt(0);
-            const account = await this.ledger.connect(Number(this.state.ledgerIndex), chainId);
+            const accounts = await this.ledger.connect(chainId, () => epoch !== this.ledgerEpoch || this.unmounted);
             if (epoch !== this.ledgerEpoch || this.unmounted) {
                 await this.ledger.disconnect();
                 return;
             }
-            this.setState({ledgerAccount: account});
+            this.setState({ledgerAccounts: accounts});
         } catch (error) {
             if (!this.unmounted && epoch === this.ledgerEpoch) this.showMessage(ledgerError(error), {type: 'error'});
         } finally {
             this.ledgerPending = false;
+            if (!this.unmounted) this.setState({isAwaitingConfirmation: false});
+        }
+    };
+
+    handleLedgerAddresses = async (address?: string) => {
+        if (this.ledgerPending) return;
+        const chosen = address ? this.state.ledgerAccounts.find(account => account.address === address) : undefined;
+        if (address && !chosen) return;
+        this.ledgerPending = true;
+        const epoch = ++this.ledgerEpoch;
+        const cancelled = () => epoch !== this.ledgerEpoch || this.unmounted;
+        this.setState({isAwaitingConfirmation: true,
+            ledgerAccount: chosen ? undefined : this.state.ledgerAccount,
+            ledgerStatus: chosen ? 'Confirm the selected address on Ledger.' : 'Loading more Ledger addresses…'});
+        try {
+            const chainId = this.props.settingsStore!.defaultNode.chainId.charCodeAt(0);
+            if (chosen) {
+                const account = await this.ledger.selectAccount(chosen.index, chainId);
+                if (account.address !== chosen.address) throw new Error('Ledger address changed. Reconnect and select your address again.');
+                if (!cancelled()) this.setState({ledgerAccount: account});
+            } else {
+                const accounts = await this.ledger.discoverAccounts(this.state.ledgerAccounts.length, chainId, cancelled);
+                if (!cancelled()) this.setState({ledgerAccounts: [...this.state.ledgerAccounts, ...accounts]});
+            }
+        } catch (error) {
+            if (!cancelled()) this.showMessage(ledgerError(error), {type: 'error'});
+        } finally {
+            this.ledgerPending = false;
+            if (cancelled()) {
+                await this.ledger.disconnect();
+                if (!this.unmounted) this.setState({ledgerAccount: undefined, ledgerAccounts: []});
+            }
             if (!this.unmounted) this.setState({isAwaitingConfirmation: false});
         }
     };
@@ -482,14 +513,12 @@ class TransactionSigning extends React.Component<ITransactionEditorProps, ITrans
                         <TransactionSigningForm
                             isAwaitingConfirmation={isAwaitingConfirmation}
                             disableAwaitingConfirmation={this.cancelConfirmation}
-                            ledgerIndex={this.state.ledgerIndex}
+                            ledgerAccounts={this.state.ledgerAccounts}
                             ledgerAccount={this.state.ledgerAccount}
                             ledgerStatus={this.state.ledgerStatus}
                             onLedgerConnect={this.handleLedgerConnect}
-                            onLedgerIndexChange={ledgerIndex => {
-                                void this.ledger.disconnect();
-                                this.setState({ledgerIndex, ledgerAccount: undefined});
-                            }}
+                            onLedgerAddressChange={address => void this.handleLedgerAddresses(address)}
+                            onLedgerLoadMore={() => void this.handleLedgerAddresses()}
                             signDisabled={signDisabled}
                             signType={signType}
                             onSignTypeChange={v => this.setState({signType: v as any})}
