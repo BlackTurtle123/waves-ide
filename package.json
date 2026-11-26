@@ -14,6 +14,7 @@
     "build-schemas": "ts-node scripts/build-schemas.ts",
     "run-all-scripts": "npm run update-examples && npm run update-test-typings && npm run build-monaco && npm run build-mocha && npm run build-language-server && npm run build-schemas",
     "dist": "webpack --config webpack.config.js --env",
+    "test:dao": "node --test test/dao-*.test.js",
     "test:ledger": "node --test test/ledger-*.test.js"
   },
   "author": "wavesplatform",

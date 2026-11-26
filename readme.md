@@ -67,3 +67,49 @@ npm start
 ```npm
 npm run dist
 ```
+
+## PWR DAO account explorer
+
+Open `/dao` (also linked in the IDE footer) to inspect Waves **mainnet** PWR
+positions. This page is read-only. Connect Ledger over WebUSB in desktop Chrome
+or Edge on HTTPS, connect Keeper, select an existing mainnet IDE account, or paste
+a public address. The IDE's network selection is unchanged. Ledger uses the same
+`ledgerConnection`, address paging, device confirmation and `@waves/ledger` 4.0.3
+adapter as the IDE signer. It does not request a signature or broadcast anything.
+Physical-device compatibility still needs a check with the user's Ledger/Waves
+app; automated tests exercise the shared adapter and error handling.
+
+The page discovers child positions from current `skin_<dao>_<address>` keys and
+withdrawals, with exact key matching that excludes historical `_period_*_exited`
+records. It includes both Arkimal DAOs and CSV exports of their remaining holders:
+
+- Arkimals Dao: `3P6x6krU9yQNbnnCQuLvSihysVQDLpWUMxz`
+- Arkimals funding for development: `3PAnedq9FteKW1rxSaohM6Xk4D5zBSHkkW4`
+
+Protocol addresses and overrides are read from the live config at
+`3PGWhtvCSz1TRJhe3BJSrvQigrtKuyXsgma`; queries use `https://nodes.wx.network`.
+Mother stake comes from the staker's `adviseUser`, rather than treating raw shares
+as PWR. Active Mother stake is not immediately withdrawable: `exit` parks it until
+the maximum of exit cooldown, legacy stake lock and KPI lock plus safety window.
+Started child DAOs use their exit cooldown and KPI safety window. Before a child
+starts, `undoCommit` returns the commitment immediately. Already parked PWR is
+claimable at `height >= withdraw_height`, subject to protocol pauses/stoplists.
+An existing withdrawal slot prevents another exit until claimed. Pending miner
+commitments follow the current `acceptCommit` implementation's `wavesDAO` setting,
+not obsolete `pending_commit_child` entries. Pending rewards are shown separately.
+
+The calculation was checked against deployed contracts on 2026-11-26. Governance
+can upgrade those contracts; keep `src/dao/data.ts` aligned if their semantics
+change. Dates are estimates at one minute per block, and reads are a live snapshot,
+not an atomic historical block snapshot. Availability does not establish signing
+authority for scripted/multisig accounts or guarantee successful execution.
+Requests time out after 45 seconds; failures clear the snapshot rather than show
+zero balances. Use Refresh after a transaction or when the displayed block is old.
+
+Validation: `npm run test:dao`, `npm run test:ledger`, `npx tsc --noEmit`, and
+`NODE_OPTIONS=--openssl-legacy-provider npm run dist`. Browser acceptance: open
+`/dao`, verify both public holder tables, look up a holder, check Mother DAO and
+child withdrawals, filter holder addresses, export CSV, and return to the IDE.
+A physical Ledger test requires unlocking the device, opening Waves, connecting,
+choosing an address and confirming it on-device, then comparing the displayed
+address with Ledger and switching to another address.

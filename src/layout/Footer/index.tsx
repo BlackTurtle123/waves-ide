@@ -4,6 +4,7 @@ import styles from './styles.less';
 import { inject } from 'mobx-react';
 import { TAB_TYPE, TabsStore } from '@stores';
 import Link from '@components/Link';
+import {Link as RouterLink} from 'react-router-dom';
 
 const links = {
     Demotour: '',
@@ -31,6 +32,7 @@ class Footer extends React.Component<IInjectedProps> {
                             .map(([name, link]) =>
                                 <Link className={styles.link} href={link} key={name}>{name}</Link>)
                         }
+                                <RouterLink className={styles.link} to="/dao">PWR DAO</RouterLink>
                                 <a className={styles.link} onClick={this.openHotKeysPage} >Hotkeys</a>
                     </div>
                     <div>

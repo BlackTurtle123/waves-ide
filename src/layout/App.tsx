@@ -6,6 +6,7 @@ import TransactionSigningDialog from './Dialogs/TransactionSigning';
 import SettingsDialog from './Dialogs/SettingsDialog';
 import ImportAccountDialog from './Dialogs/ImportAccountDialog';
 import Footer from './Footer';
+import Dao from './Dao';
 import Main from './Main';
 import Bottom from './Bottom';
 import SidePanel from './SidePanel';
@@ -55,7 +56,9 @@ export default class App extends React.Component<IInjectedProps> {
         return (
             <ThemeHandler theme={this.props.settingsStore!.theme}>
                 <Router history={this.props.history}>
-                    <div className={styles.layout}>
+                    <Switch>
+                    <Route exact path="/dao" render={() => <Dao/>}/>
+                    <Route render={() => <div className={styles.layout}>
                         <div className={styles.sideAndMain}>
                             <SidePanel storeKey="explorer" resizeSide="right" closedSize={24} minSize={225}/>
                             <Main/>
@@ -71,7 +74,8 @@ export default class App extends React.Component<IInjectedProps> {
                         <Route path="/importState" component={ImportStateDialog}/>
                         <Route path="/signer" component={TransactionSigningDialog}/>
                         <Route path="/importAccount" component={ImportAccountDialog}/>
-                    </div>
+                    </div>}/>
+                    </Switch>
                 </Router>
             </ThemeHandler>
         );
